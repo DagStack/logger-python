@@ -1,0 +1,221 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dagstack-logger"
+description = "Python binding for dagstack/logger-spec — OTel-compatible structured logging with a named-logger hierarchy, context propagation, pluggable sinks, and scoped overrides"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Evgenii Demchenko", email = "demchenkoev@gmail.com" },
+]
+keywords = [
+    "logger",
+    "logging",
+    "observability",
+    "opentelemetry",
+    "otel",
+    "structured-logging",
+    "dagstack",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Logging",
+    "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
+]
+dynamic = ["version"]
+dependencies = [
+    # OTel API — context propagation (mandatory per spec §3.4). SDK (exporters) — optional.
+    "opentelemetry-api>=1.20,<2.0",
+    # NOTE: dagstack-config is intentionally NOT a runtime dependency. The
+    # application loads its config and passes the resolved `logging:` section
+    # into the module-level `configure(**section)`. This keeps logger-python
+    # and config-python independently versionable.
+]
+
+[project.urls]
+Homepage = "https://github.com/dagstack/logger-python"
+Repository = "https://github.com/dagstack/logger-python"
+Issues = "https://github.com/dagstack/logger-python/issues"
+Specification = "https://github.com/dagstack/logger-spec"
+
+[project.optional-dependencies]
+# Phase 2+: OTLP exporter via the OTel SDK. Not pulled by default — keeps the minimal footprint.
+otlp = ["opentelemetry-sdk>=1.20,<2.0", "opentelemetry-exporter-otlp>=1.20,<2.0"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "pre-commit>=3.7",
+    "types-pyyaml>=6.0",
+]
+
+[tool.hatch.version]
+path = "src/dagstack/logger/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dagstack"]
+
+# ─── pytest ──────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "strict"
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--cov=dagstack.logger",
+    "--cov-report=term-missing",
+]
+markers = [
+    "slow: tests that take longer than 1 second",
+    "conformance: tests run against spec/conformance fixtures",
+]
+
+[tool.coverage.run]
+source = ["src/dagstack/logger"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "@overload",
+    # Protocol method stubs — type-level only, never executed at runtime.
+    "^\\s*\\.\\.\\.\\s*$",
+]
+
+# ─── ruff ────────────────────────────────────────────────────────────────────
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "N",
+    "UP",
+    "B",
+    "A",
+    "C4",
+    "PT",
+    "SIM",
+    "RUF",
+    "TID",
+    "TCH",
+    "PYI",
+]
+ignore = [
+    "E501",
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "N818",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",
+    "PLR2004",
+]
+# `tests/docs_examples/` mirrors snippets verbatim from `dagstack/logger-docs`.
+# Snippets reproduce per-block imports, which look like duplicates / unused
+# imports to the linter — but rewriting them would break the
+# verbatim-equals-MDX guarantee that gives these tests their value.
+"tests/docs_examples/**/*.py" = [
+    "S101",
+    "PLR2004",
+    "F401",   # snippet imports may look unused outside the snippet block
+    "F811",   # snippet imports may shadow module-level imports
+    "I001",   # snippet imports preserved as written in MDX
+    "TC003",  # tmp_path / Iterator typing — kept at runtime for fixtures
+    "UP035",  # snippet may use `from typing import Callable` per docs
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dagstack"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ─── mypy ────────────────────────────────────────────────────────────────────
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+namespace_packages = true
+explicit_package_bases = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+disallow_untyped_defs = true
+disallow_any_explicit = false
+no_implicit_reexport = true
+show_error_codes = true
+show_error_context = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+# `tests/docs_examples/` files are verbatim mirrors of MDX snippets from
+# `dagstack/logger-docs`. Snippets are illustrative — they intentionally
+# use `list[dict]` without type parameters, mix sink types in one list,
+# and have unreachable `return` after `assert never_true()` patterns.
+# Re-typing the snippets would break the verbatim-equals-MDX guarantee.
+module = "tests.docs_examples.*"
+disable_error_code = [
+    "type-arg",       # `list[dict]` etc — pedagogical, not production
+    "arg-type",       # FileSink in ConsoleSink-typed list (illustrative)
+    "no-untyped-call", # _resolve_severity helper used in snippets
+    "unreachable",    # assert/return patterns after illustrative branches
+    "union-attr",     # Optional unwrap omitted in snippets for brevity
+]
+
+[[tool.mypy.overrides]]
+# tests.test_redaction asserts on dynamically-typed Value (recursive union)
+# elements after redact_attributes returns; mypy strict cannot narrow
+# events[0]["k"] without explicit cast / isinstance ladders that would
+# dilute the test's intent.
+module = "tests.test_redaction"
+disable_error_code = [
+    "index",          # Value union is not statically indexable
+    "call-overload",  # list[Value].__getitem__(str) — same root cause
+]
+
+[[tool.mypy.overrides]]
+# OTel SDK — optional dependency; may be absent during mypy runs.
+module = "opentelemetry.*"
+ignore_missing_imports = true
